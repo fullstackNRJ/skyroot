@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Rocket Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #050816;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(5, 8, 22, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            transition: opacity 1s;
+        }
+        #loading-bar {
+            width: 200px;
+            height: 4px;
+            background: #1a1a1a;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        #loading-progress {
+            width: 0%;
+            height: 100%;
+            background: #3b82f6;
+            transition: width 0.3s;
+        }
+        #loading-text {
+            color: white;
+            margin-top: 16px;
+            font-size: 14px;
+        }
+        #controls-info {
+            position: fixed;
+            bottom: 24px;
+            left: 24px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay">
+        <div id="loading-bar">
+            <div id="loading-progress"></div>
+        </div>
+        <div id="loading-text">Loading: 0%</</div>
+    </div>
+    <div id="controls-info">
+        <p style="margin: 0 0 4px; font-weight: 500">Controls:</p>
+        <p style="margin: 0">• Left Click + Drag: Rotate</p>
+        <p style="margin: 0">• Right Click + Drag: Pan</p>
+        <p style="margin: 0">• Scroll: Zoom</p>
+    </div>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#050816');
+
+        // Camera setup
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 2, 20);
+
+        // Renderer setup
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        document.body.appendChild(renderer.domElement);
+
+        // Controls
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 3;
+        controls.maxDistance = 20;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 2);
+        scene.add(ambientLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
+        directionalLight.position.set(5, 10, 5);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+
+        const pointLight1 = new THREE.PointLight(0x3366ff, 20, 10);
+        pointLight1.position.set(-5, 0, -5);
+        scene.add(pointLight1);
+
+        const pointLight2 = new THREE.PointLight(0xff6633, 20, 10);
+        pointLight2.position.set(5, 0, -5);
+        scene.add(pointLight2);
+
+        // Stars
+        function createStars() {
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+
+            for (let i = 0; i < 5000; i++) {
+                const x = (Math.random() - 0.5) * 2000;
+                const y = (Math.random() - 0.5) * 2000;
+                const z = (Math.random() - 0.5) * 2000;
+                vertices.push(x, y, z);
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            const material = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.1,
+            });
+
+            const stars = new THREE.Points(geometry, material);
+            scene.add(stars);
+        }
+
+        createStars();
+
+        // Load rocket model
+        const loadingManager = new THREE.LoadingManager();
+        const progressBar = document.getElementById('loading-progress');
+        const loadingText = document.getElementById('loading-text');
+        const loadingOverlay = document.getElementById('loading-overlay');
+
+        loadingManager.onProgress = (url, loaded, total) => {
+            const progress = (loaded / total) * 100;
+            progressBar.style.width = progress + '%';
+            loadingText.textContent = `Loading: ${Math.round(progress)}%`;
+        };
+
+        loadingManager.onLoad = () => {
+            loadingOverlay.style.opacity = '0';
+            setTimeout(() => {
+                loadingOverlay.style.display = 'none';
+            }, 1000);
+        };
+
+        const loader = new GLTFLoader(loadingManager);
+        let rocket;
+
+        loader.load(
+            'https://vocal-mooncake-fa3b19.netlify.app/models/rocket.glb',
+            (gltf) => {
+                console.log('Model loaded:', gltf);
+                rocket = gltf.scene;
+
+                // Compute bounding box BEFORE scaling
+                const box = new THREE.Box3().setFromObject(rocket);
+                const center = box.getCenter(new THREE.Vector3());
+                rocket.position.sub(center); // Center the model at origin
+
+                // Scale the model
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const scale = 8 / maxDim;
+                rocket.scale.set(scale, scale, scale);
+
+                // Recompute bounding box AFTER scaling and re-center
+                const scaledBox = new THREE.Box3().setFromObject(rocket);
+                const scaledCenter = scaledBox.getCenter(new THREE.Vector3());
+                rocket.position.sub(scaledCenter);
+
+                // Optionally, move the rocket slightly down if needed
+                rocket.position.y -= 2;
+
+                rocket.traverse((child) => {
+                    if (child instanceof THREE.Mesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+
+                scene.add(rocket);
+            },
+            (xhr) => {
+                console.log((xhr.loaded / xhr.total) * 100 + '% loaded');
+            },
+            (error) => {
+                console.error('Error loading model:', error);
+            }
+        );
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            
+            if (rocket) {
+                rocket.rotation.y += 0.002;
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
